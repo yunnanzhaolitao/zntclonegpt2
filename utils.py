@@ -65,31 +65,31 @@ def get_chat_response(prompt: str,
                 model_kwargs={"device": "cpu"}
             )
         )
-        # 使用新版LangChain推荐的方式
-        from langchain.chains import create_history_aware_retriever
-        from langchain.chains.combine_documents import create_stuff_documents_chain
-        from langchain.chains import create_retrieval_chain
-        
-        # 1. 创建历史感知的检索器
-        retriever = vectordb.as_retriever()
-        contextualize_q_chain = create_history_aware_retriever(
-            llm, retriever, memory
+        # 使用 ConversationalRetrievalChain 替代旧的方法
+        chain = ConversationalRetrievalChain.from_llm(
+            llm=llm,
+            retriever=vectordb.as_retriever(),
+            memory=memory,
+            return_source_documents=True,
+            verbose=chain_of_thought
         )
         
-        # 2. 创建文档处理链
-        qa_chain = create_stuff_documents_chain(llm)
-        
-        # 3. 组合成完整的检索链
-        chain = create_retrieval_chain(contextualize_q_chain, qa_chain)
+        # 从memory中获取chat_history
+        chat_history = []
+        if hasattr(memory, 'chat_memory'):
+            chat_history = memory.chat_memory.messages
         
         # 调用链
-        result = chain.invoke({"input": prompt})
+        result = chain.invoke({
+            "question": prompt,
+            "chat_history": chat_history
+        })
         
         # 更新streamlit会话状态
-        from streamlit import session_state as st_session
-        chat_history = st_session.get("chat_history", [])
-        chat_history.append((prompt, result["answer"]))
-        st_session["chat_history"] = chat_history
+        import streamlit as st
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+        st.session_state.chat_history.append((prompt, result["answer"]))
         
         return result["answer"]
 

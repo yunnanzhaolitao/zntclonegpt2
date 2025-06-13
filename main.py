@@ -2,7 +2,7 @@
 import pathlib
 import asyncio
 import streamlit as st
-from langchain.memory import ConversationSummaryBufferMemory
+from langchain.memory import ConversationBufferMemory
 from langchain_openai import ChatOpenAI
 import nest_asyncio
 nest_asyncio.apply()
@@ -73,10 +73,10 @@ with st.sidebar:
             openai_api_key=api_key,
             openai_api_base=api_base
         )
-        st.session_state["memory"] = ConversationSummaryBufferMemory(
-            llm=summary_llm,
-            max_token_limit=2000,
-            return_messages=True
+        st.session_state["memory"] = ConversationBufferMemory(
+            return_messages=True,
+            memory_key="chat_history",
+            output_key="answer"
         )
 
         st.success("配置完成！")
