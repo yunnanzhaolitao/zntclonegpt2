@@ -9,6 +9,10 @@ nest_asyncio.apply()
 
 from utils import get_chat_response, online_search_agent
 from ingest import ingest_folder
+import sys
+import pysqlite3
+
+sys.modules["sqlite3"] = pysqlite3
 
 # 页面配置
 st.set_page_config(page_title="znt-GPT", page_icon="🤖", layout="wide")
