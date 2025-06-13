@@ -53,7 +53,7 @@ with st.sidebar:
     st.header("🔧 设置")
     api_key = st.text_input("OpenAI API Key", type="password")
     serp_key = st.text_input("SerpAPI Key（联网搜索）", type="password")
-    model = st.selectbox("模型", ["gpt-3.5-turbo", "gpt-4", "o4-mini"])
+    model = st.selectbox("模型", ["gpt-3.5-turbo", "gpt-4", "o3", "o4-mini", "gpt-4.1", "gpt-4.5-preview-2025-02-27"])
     api_base = st.text_input("API Base URL", value="https://api.aigc369.com/v1")
 
     if st.button("✅ 保存配置", key="setup"):
