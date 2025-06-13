@@ -9,9 +9,7 @@ from langchain.chains import ConversationChain, ConversationalRetrievalChain
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
-import sys
-import pysqlite3
-sys.modules["sqlite3"] = pysqlite3
+
 def online_search_agent(openai_key: str,
                        serp_key: Optional[str] = None,
                        model_name: str = "gpt-3.5-turbo",
