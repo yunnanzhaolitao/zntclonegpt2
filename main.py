@@ -1,18 +1,17 @@
 # main.py  — znt-GPT 主入口
 import sys
 import pysqlite3
-
 sys.modules["sqlite3"] = pysqlite3
 import pathlib
 import asyncio
 import streamlit as st
-from langchain.memory import ConversationBufferMemory
 from langchain_openai import ChatOpenAI
 import nest_asyncio
 nest_asyncio.apply()
 
 from utils import get_chat_response, online_search_agent
 from ingest import ingest_folder
+from memory import MemoryManager
 
 
 # 页面配置
@@ -72,30 +71,38 @@ with st.sidebar:
             "api_base": api_base
         })
 
-        # 初始化 summary memory（❗注意去掉 input_key/output_key）
+        # 初始化 LLM 和记忆管理器
         summary_llm = ChatOpenAI(
             model=model,
             openai_api_key=api_key,
             openai_api_base=api_base
         )
-        st.session_state["memory"] = ConversationBufferMemory(
-            return_messages=True,
-            memory_key="chat_history",
-            output_key="answer"
+        # 创建记忆管理器，包含短期和长期记忆，使用用户特定的向量存储路径
+        memory_vector_path = str(user_db_dir / "memory_vectors")
+        st.session_state["memory_manager"] = MemoryManager(
+            summary_llm,
+            vector_store_path=memory_vector_path
         )
 
         st.success("配置完成！")
         st.rerun()
 
 # 等待配置完成
-if "openai_api_key" not in st.session_state or "memory" not in st.session_state:
+if "openai_api_key" not in st.session_state or "memory_manager" not in st.session_state:
     st.info("请在侧边栏完成配置后再使用")
     st.stop()
 
 # 可选调试：查看历史摘要内容
 with st.sidebar:
     if st.button("📄 查看历史摘要"):
-        st.sidebar.code(st.session_state["memory"].buffer)
+        if "memory_manager" in st.session_state:
+            short_term = st.session_state["memory_manager"].short_term.memory.buffer
+            st.sidebar.subheader("短期记忆")
+            st.sidebar.code(short_term)
+            
+            long_term = st.session_state["memory_manager"].get_long_term_summary()
+            st.sidebar.subheader("长期记忆摘要")
+            st.sidebar.code(long_term)
 
 # 展示聊天记录
 for msg in st.session_state["messages"]:
@@ -147,7 +154,7 @@ if prompt:
             else:
                 answer = get_chat_response(
                     prompt=prompt,
-                    memory=st.session_state["memory"],
+                    memory_manager=st.session_state["memory_manager"],
                     openai_api_key=st.session_state["openai_api_key"],
                     model_name=st.session_state["model_name"],
                     use_docs=True,
