@@ -1,28 +1,37 @@
-# main.py  — znt-GPT 主入口
-import os
+# ----------------- znt-GPT main.py Imports (patched) -----------------
+import os, builtins
+
+# 1) 彻底关闭 Streamlit 源监控
 os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
-import builtins
 builtins.__dict__["__torch_fake_module__"] = True
-import sys
-# 强制中止源路径监控器（可选补救）
 import streamlit.watcher.local_sources_watcher as watcher
-watcher.LocalSourcesWatcher._get_module_paths = lambda self, module: []
-import types, importlib
-def _patch_torch_classes():
-    try:
-        torch = importlib.import_module("torch")
-        # 给 torch.classes 一个“假路径”，让 Streamlit 不会去访问不存在的 __path__._path
+watcher.LocalSourcesWatcher._get_module_paths = lambda *_a, **_k: []
+
+# 2) 屏蔽 torch.classes 相关报错
+import importlib, types
+try:
+    torch = importlib.import_module("torch")
+
+    # 给 torch.classes 一个假的 __path__
+    if hasattr(torch, "classes") and not hasattr(torch.classes, "__path__"):
         class _FakePath(list):
-            _path: list = []
-        if hasattr(torch, "classes"):
-            torch.classes.__path__ = _FakePath()        # type: ignore
-    except Exception:
-        pass
-_patch_torch_classes()
+            _path = []
+        torch.classes.__path__ = _FakePath()           # type: ignore
+
+    # 替换 torch._classes.__getattr__，避免 C++ wrapper 报错
+    if hasattr(torch, "_classes"):
+        def _safe_getattr(self, attr):                 # type: ignore[no-self]
+            return types.SimpleNamespace()
+        torch._classes.__getattr__ = _safe_getattr     # type: ignore[assignment]
+except Exception:
+    pass
+# --------------------------------------------------------------------
+
+# 3) 其余常规 import（保持原顺序）
+import sys, pathlib, asyncio
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
-import pathlib
-import asyncio
+
 import streamlit as st
 from langchain_openai import ChatOpenAI
 import nest_asyncio
@@ -31,7 +40,7 @@ nest_asyncio.apply()
 from utils import get_chat_response, online_search_agent
 from ingest import ingest_folder
 from memory import MemoryManager
-
+# ----------------- import 区域结束 -----------------
 
 # 页面配置
 st.set_page_config(page_title="znt-GPT", page_icon="🤖", layout="wide")
