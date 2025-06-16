@@ -1,5 +1,7 @@
 # main.py  — znt-GPT 主入口
 import sys
+import os
+os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
 import pathlib
