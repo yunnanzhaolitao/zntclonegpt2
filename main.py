@@ -2,6 +2,9 @@
 import sys
 import os
 os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
+# 强制中止源路径监控器（可选补救）
+import streamlit.watcher.local_sources_watcher as watcher
+watcher.LocalSourcesWatcher._get_module_paths = lambda self, module: []
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
 import pathlib
