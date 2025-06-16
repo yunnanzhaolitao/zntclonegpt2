@@ -59,10 +59,14 @@ def get_chat_response(prompt: str,
                       chain_of_thought: bool = False,
                       api_base: str = "https://api.aigc369.com/v1"):
     """
-    获取聊天响应，支持短期和长期记忆
+    获取聊天响应，支持短期和长期记忆，增强健壮性防止 answer 报错
     """
     import streamlit as st
     import json
+    from langchain.chains import ConversationChain, ConversationalRetrievalChain
+    from langchain_chroma import Chroma
+    from langchain_huggingface import HuggingFaceEmbeddings
+    from langchain_openai import ChatOpenAI
 
     # 初始化 LLM
     llm = ChatOpenAI(
@@ -108,7 +112,10 @@ def get_chat_response(prompt: str,
                 "chat_history": short_term_memory
             })
 
+            # 输出调试信息
             st.code(json.dumps(result, indent=2, ensure_ascii=False), language="json")
+            print("[DEBUG] Result type:", type(result))
+            print("[DEBUG] Result content:", result)
 
             if isinstance(result, dict):
                 answer = result.get("answer") or result.get("output") or "🤖 没有获取到回答内容。"
@@ -120,8 +127,7 @@ def get_chat_response(prompt: str,
 
         memory_manager.add_interaction(prompt, answer)
 
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
+        st.session_state.chat_history = st.session_state.get("chat_history", [])
         st.session_state.chat_history.append((prompt, answer))
 
         return answer
@@ -134,14 +140,20 @@ def get_chat_response(prompt: str,
             verbose=chain_of_thought
         )
         result = conv.invoke({"input": prompt})
-        response = result.get("response") or list(result.values())[0]
+
+        print("[DEBUG] ConversationChain result:", result)
+
+        if isinstance(result, dict):
+            response = result.get("response") or list(result.values())[0]
+        else:
+            response = str(result)
+
     except Exception as e:
         response = f"⚠️ 对话模式异常：{str(e)}"
 
     memory_manager.add_interaction(prompt, response)
 
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+    st.session_state.chat_history = st.session_state.get("chat_history", [])
     st.session_state.chat_history.append((prompt, response))
 
     return response
