@@ -2,6 +2,8 @@
 import sys
 import os
 os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
+import builtins
+builtins.__dict__["__torch_fake_module__"] = True
 # 强制中止源路径监控器（可选补救）
 import streamlit.watcher.local_sources_watcher as watcher
 watcher.LocalSourcesWatcher._get_module_paths = lambda self, module: []
