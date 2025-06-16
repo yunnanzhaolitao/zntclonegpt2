@@ -7,6 +7,18 @@ import sys
 # 强制中止源路径监控器（可选补救）
 import streamlit.watcher.local_sources_watcher as watcher
 watcher.LocalSourcesWatcher._get_module_paths = lambda self, module: []
+import types, importlib
+def _patch_torch_classes():
+    try:
+        torch = importlib.import_module("torch")
+        # 给 torch.classes 一个“假路径”，让 Streamlit 不会去访问不存在的 __path__._path
+        class _FakePath(list):
+            _path: list = []
+        if hasattr(torch, "classes"):
+            torch.classes.__path__ = _FakePath()        # type: ignore
+    except Exception:
+        pass
+_patch_torch_classes()
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
 import pathlib
