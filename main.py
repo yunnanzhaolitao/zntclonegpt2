@@ -1,35 +1,39 @@
-# ---------- znt-GPT  main.py 头部（终极修正版） ----------
-import os, builtins, importlib, types, sys, pathlib, asyncio
-os.environ["STREAMLIT_WATCHER_TYPE"] = "none"          # 关闭文件监控
-builtins.__dict__["__torch_fake_module__"] = True
+# ---------- znt-GPT  main.py -- import & 环境修补 ----------
+import os, sys, importlib, types, builtins
+os.environ["STREAMLIT_WATCHER_TYPE"] = "none"          # 关掉源码监控后台线程
+builtins.__dict__["__torch_fake_module__"] = True      # 避免 torch 延迟加载时再报错
 
-# ① 让 Streamlit 不去解析源码路径
+# ① 彻底禁用 Streamlit 对模块路径的探测
 import streamlit.watcher.local_sources_watcher as _sw
 _sw.LocalSourcesWatcher._get_module_paths = lambda *_a, **_k: []
 
-# ② 优雅屏蔽 torch._classes / torch.classes 的“魔法属性”访问
+# ② 修补 torch.*
 try:
     torch = importlib.import_module("torch")
 
-    # ②-a 伪造 torch.classes.__path__，避免 __path__._path 报错
-    if hasattr(torch, "classes") and not getattr(torch.classes, "__path__", None):
-        class _FakePath(list):
-            _path = []
-        torch.classes.__path__ = _FakePath()            # type: ignore
+    def _patch(name: str):
+        """为 torch.(classes|_classes) 打补丁：mock __getattr__ & __path__"""
+        mod = getattr(torch, name, None)
+        if not mod:
+            return
+        # (a) 让任何 getattr 调用都返回一个哑对象，避免 _get_custom_class_python_wrapper
+        mod.__getattr__ = lambda *_, **__: types.SimpleNamespace()         # type: ignore
+        # (b) 伪造 __path__，防止 __path__._path AttributeError
+        if not getattr(mod, "__path__", None):
+            class _FakePath(list): _path = []
+            mod.__path__ = _FakePath()                                     # type: ignore
 
-    # ②-b 统一兜底 torch._classes.__getattr__
-    if hasattr(torch, "_classes"):
-        # 接受任意参数，避免 self/attr 不匹配
-        torch._classes.__getattr__ = lambda *_, **__: types.SimpleNamespace()  # type: ignore[assignment]
+    _patch("_classes")
+    _patch("classes")
 except Exception:
     pass
-# ---------------------------------------------------------
+# -----------------------------------------------------------------
 
-# ③ 常规 import（保持不变）
+# ③ 其余正常 import（保持不变）
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
 
-import streamlit as st
+import pathlib, asyncio, streamlit as st
 from langchain_openai import ChatOpenAI
 import nest_asyncio
 nest_asyncio.apply()
@@ -37,7 +41,8 @@ nest_asyncio.apply()
 from utils import get_chat_response, online_search_agent
 from ingest import ingest_folder
 from memory import MemoryManager
-# ---------- 头部结束 --------------------------------------
+# ---------- 头部结束 --------------------------------------------
+
 
 
 # 页面配置
