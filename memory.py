@@ -15,6 +15,24 @@ class ShortTermMemory:
         self.max_token_limit = max_token_limit
         self.message_history = ChatMessageHistory()
         self.memory_key = "chat_history"
+        
+        # 添加一个兼容性属性，模拟旧版本的 memory 属性
+        class MemoryCompatibility:
+            def __init__(self, parent):
+                self.parent = parent
+            
+            @property
+            def buffer(self):
+                """返回聊天历史的字符串表示"""
+                messages = self.parent.message_history.messages
+                if not messages:
+                    return ""
+                return "\n".join([
+                    f"{'Human' if isinstance(msg, HumanMessage) else 'AI'}: {msg.content}"
+                    for msg in messages
+                ])
+
+        self.memory = MemoryCompatibility(self)
 
     def add_message(self, human_message: str, ai_message: str):
         self.message_history.add_user_message(human_message)
