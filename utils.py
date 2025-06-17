@@ -6,6 +6,7 @@ from langchain.agents import initialize_agent, AgentType
 from langchain_community.utilities.serpapi import SerpAPIWrapper
 from langchain.tools import Tool
 from langchain.chains import ConversationChain, ConversationalRetrievalChain
+from langchain.schema import HumanMessage, AIMessage
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
@@ -121,9 +122,28 @@ def get_chat_response(
     # ────────────── 4. 普通对话模式 ───────────
     else:
         try:
+            # 创建一个基于消息历史的内存对象
+            from langchain.memory import ConversationBufferMemory
+            
+            # 获取相关历史
+            relevant = memory_manager.get_relevant_history(prompt)
+            messages = relevant["short_term"].get("chat_history", [])
+            
+            # 创建内存对象
+            memory = ConversationBufferMemory(return_messages=True)
+            
+            # 将历史消息添加到内存中
+            for message in messages:
+                if isinstance(message, HumanMessage):
+                    memory.chat_memory.add_user_message(message.content)
+                elif isinstance(message, AIMessage):
+                    memory.chat_memory.add_ai_message(message.content)
+            
+            # 使用包含历史消息的内存创建对话链
             conv = ConversationChain(
                 llm=llm,
-                verbose=chain_of_thought,  # 不再显式传入 memory
+                memory=memory,  # 使用包含历史消息的内存
+                verbose=chain_of_thought,
             )
             result = conv.invoke({"input": prompt})
             answer = (
