@@ -63,11 +63,10 @@ def get_chat_response(
     """
     与大语言模型聊天，并自动读写短期 / 长期记忆。
 
-    - 当 `use_docs=True` 且指定了 `embed_dir` 时，自动检索该目录下的向量库。
-    - 返回值始终是「纯文本 / emoji」，不会再额外输出 JSON 或调试信息。
+    - 当 `use_docs=True` 且指定了 `embed_dir` 时，会检索该目录下的向量库。
+    - 返回值永远是「纯文本 / emoji」，不会额外输出 JSON 或调试信息。
     """
-
-    # ───────────────────── 1. 初始化 LLM ─────────────────────
+    # ────────────── 1. 初始化 LLM ──────────────
     llm = ChatOpenAI(
         model=model_name,
         temperature=0.2,
@@ -75,18 +74,19 @@ def get_chat_response(
         openai_api_base=api_base,
     )
 
-    # ───────────────────── 2. 初始化 Memory ──────────────────
+    # ────────────── 2. 初始化 MemoryManager ───
     if memory_manager is None:
         if "memory_manager" in st.session_state:
-            memory_manager = st.session_state.memory_manager    # type: ignore
+            memory_manager = st.session_state.memory_manager  # type: ignore
         else:
-            from memory import MemoryManager                    # 迟导入，避免循环
+            from memory import MemoryManager  # 延迟导入避免循环
             memory_manager = MemoryManager(llm)
             st.session_state.memory_manager = memory_manager
 
-    # ───────────────────── 3. 文档检索模式 ──────────────────
+    answer: str
+
+    # ────────────── 3. 文档检索模式 ───────────
     if use_docs and embed_dir and Path(embed_dir).exists():
-        # ① 构建向量数据库检索器
         vectordb = Chroma(
             persist_directory=str(embed_dir),
             embedding_function=HuggingFaceEmbeddings(
@@ -95,21 +95,16 @@ def get_chat_response(
             ),
         )
 
-        # ② 拿到短期记忆中的相关对话
-        relevant_memory = memory_manager.get_relevant_history(prompt)
-        short_term_history = relevant_memory["short_term"].get("chat_history", [])
+        relevant = memory_manager.get_relevant_history(prompt)
+        short_term_history = relevant["short_term"].get("chat_history", [])
 
-        # ③ 组装 Retrieval Chain
         chain = ConversationalRetrievalChain.from_llm(
             llm=llm,
             retriever=vectordb.as_retriever(),
-            memory=memory_manager.short_term.memory,
-            return_source_documents=False,      # 仅要答案，不返回文档
             verbose=chain_of_thought,
-            output_key="answer",
+            output_key="answer",      # 只关心答案
         )
 
-        # ④ 调用链
         try:
             result = chain.invoke(
                 {"question": prompt, "chat_history": short_term_history}
@@ -122,13 +117,12 @@ def get_chat_response(
         except Exception as e:
             answer = f"⚠️ 链调用异常：{e}"
 
-    # ───────────────────── 4. 普通对话模式 ───────────────────
+    # ────────────── 4. 普通对话模式 ───────────
     else:
         try:
             conv = ConversationChain(
                 llm=llm,
-                memory=memory_manager.short_term.memory,
-                verbose=chain_of_thought,
+                verbose=chain_of_thought,  # 不再显式传入 memory
             )
             result = conv.invoke({"input": prompt})
             answer = (
@@ -139,11 +133,10 @@ def get_chat_response(
         except Exception as e:
             answer = f"⚠️ 对话模式异常：{e}"
 
-    # ───────────────────── 5. 写入记忆 & SessionState ───────
+    # ────────────── 5. 更新记忆 & SessionState ─
     memory_manager.add_interaction(prompt, answer)
 
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []                      # type: ignore
-    st.session_state.chat_history.append((prompt, answer))
+    st.session_state.setdefault("chat_history", [])               # type: ignore
+    st.session_state.chat_history.append((prompt, answer))        # type: ignore
 
     return answer
