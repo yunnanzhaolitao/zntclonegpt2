@@ -1,8 +1,7 @@
-
 import os
 import streamlit as st
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 from langchain.agents import initialize_agent, AgentType
 from langchain_community.utilities.serpapi import SerpAPIWrapper
 from langchain.tools import Tool
@@ -11,14 +10,14 @@ from langchain.schema import HumanMessage, AIMessage
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
 from memory import MemoryManager
+
 
 def online_search_agent(openai_key: str,
                         serp_key: Optional[str] = None,
                         model_name: str = "gpt-3.5-turbo",
                         api_base: str = "https://api.aigc369.com/v1"):
-    """基于 SerpAPI 的联网搜索 Agent，附带会话记忆"""
+    """基于 SerpAPI 的联网搜索 Agent"""
     if not serp_key:
         serp_key = os.getenv("SERPAPI_API_KEY")
         if not serp_key:
@@ -29,7 +28,9 @@ def online_search_agent(openai_key: str,
 
     def search_wrapper(query: str) -> str:
         result = search.run(query)
-        return str(result) if not isinstance(result, list) else "\n".join(result)
+        if isinstance(result, list):
+            return "\n".join(result)
+        return str(result)
 
     tool = Tool(
         name="Search",
@@ -42,15 +43,11 @@ def online_search_agent(openai_key: str,
         openai_api_key=openai_key,
         openai_api_base=api_base
     )
-
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
     return initialize_agent(
         tools=[tool],
         llm=llm,
         agent=AgentType.OPENAI_FUNCTIONS,
-        verbose=True,
-        memory=memory,
+        verbose=True
     )
 
 
@@ -64,7 +61,10 @@ def get_chat_response(
     chain_of_thought: bool = False,
     api_base: str = "https://api.aigc369.com/v1",
 ) -> str:
-    """与大语言模型聊天，支持短期与长期记忆，可选向量库检索"""
+    """
+    与大语言模型聊天，统一读写短期 / 长期记忆。
+    统一调用向量库召回并写入向量库。
+    """
     llm = ChatOpenAI(
         model=model_name,
         temperature=0.2,
@@ -72,16 +72,17 @@ def get_chat_response(
         openai_api_base=api_base,
     )
 
+    # 初始化 memory manager
     if memory_manager is None:
         if "memory_manager" in st.session_state:
-            memory_manager = st.session_state.memory_manager
+            memory_manager = st.session_state.memory_manager  # type: ignore
         else:
-            from memory import MemoryManager
             memory_manager = MemoryManager(llm)
             st.session_state.memory_manager = memory_manager
 
     answer: str
 
+    # 文档检索模式
     if use_docs and embed_dir and Path(embed_dir).exists():
         vectordb = Chroma(
             persist_directory=str(embed_dir),
@@ -103,15 +104,20 @@ def get_chat_response(
 
         try:
             result = chain.invoke({"question": prompt, "chat_history": short_term_history})
-            answer = result.get("answer") if isinstance(result, dict) else str(result)
+            answer = (
+                result.get("answer")
+                if isinstance(result, dict)
+                else str(result)
+            )
         except Exception as e:
             answer = f"⚠️ 链调用异常：{e}"
 
+    # 普通对话模式
     else:
         try:
+            from langchain.memory import ConversationBufferMemory
             relevant = memory_manager.get_relevant_history(prompt)
             messages = relevant["short_term"].get("chat_history", [])
-
             memory = ConversationBufferMemory(return_messages=True)
             for message in messages:
                 if isinstance(message, HumanMessage):
@@ -119,14 +125,25 @@ def get_chat_response(
                 elif isinstance(message, AIMessage):
                     memory.chat_memory.add_ai_message(message.content)
 
-            conv = ConversationChain(llm=llm, memory=memory, verbose=chain_of_thought)
+            conv = ConversationChain(
+                llm=llm,
+                memory=memory,
+                verbose=chain_of_thought,
+            )
             result = conv.invoke({"input": prompt})
-            answer = result.get("response") if isinstance(result, dict) else str(result)
+            answer = (
+                result.get("response")
+                if isinstance(result, dict)
+                else str(result)
+            )
         except Exception as e:
             answer = f"⚠️ 对话模式异常：{e}"
 
+    # 写入所有历史（短期 + 向量库）
     memory_manager.add_interaction(prompt, answer)
-    st.session_state.setdefault("chat_history", [])
-    st.session_state.chat_history.append((prompt, answer))
+    memory_manager.add_to_vector_memory(prompt, answer)
+
+    st.session_state.setdefault("chat_history", [])               # type: ignore
+    st.session_state.chat_history.append((prompt, answer))        # type: ignore
 
     return answer
