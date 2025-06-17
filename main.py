@@ -1,34 +1,31 @@
-# ----------------- znt-GPT main.py Imports (patched) -----------------
-import os, builtins
-
-# 1) 彻底关闭 Streamlit 源监控
-os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
+# ---------- znt-GPT  main.py 头部（终极修正版） ----------
+import os, builtins, importlib, types, sys, pathlib, asyncio
+os.environ["STREAMLIT_WATCHER_TYPE"] = "none"          # 关闭文件监控
 builtins.__dict__["__torch_fake_module__"] = True
-import streamlit.watcher.local_sources_watcher as watcher
-watcher.LocalSourcesWatcher._get_module_paths = lambda *_a, **_k: []
 
-# 2) 屏蔽 torch.classes 相关报错
-import importlib, types
+# ① 让 Streamlit 不去解析源码路径
+import streamlit.watcher.local_sources_watcher as _sw
+_sw.LocalSourcesWatcher._get_module_paths = lambda *_a, **_k: []
+
+# ② 优雅屏蔽 torch._classes / torch.classes 的“魔法属性”访问
 try:
     torch = importlib.import_module("torch")
 
-    # 给 torch.classes 一个假的 __path__
-    if hasattr(torch, "classes") and not hasattr(torch.classes, "__path__"):
+    # ②-a 伪造 torch.classes.__path__，避免 __path__._path 报错
+    if hasattr(torch, "classes") and not getattr(torch.classes, "__path__", None):
         class _FakePath(list):
             _path = []
-        torch.classes.__path__ = _FakePath()           # type: ignore
+        torch.classes.__path__ = _FakePath()            # type: ignore
 
-    # 替换 torch._classes.__getattr__，避免 C++ wrapper 报错
+    # ②-b 统一兜底 torch._classes.__getattr__
     if hasattr(torch, "_classes"):
-        def _safe_getattr(self, attr):                 # type: ignore[no-self]
-            return types.SimpleNamespace()
-        torch._classes.__getattr__ = _safe_getattr     # type: ignore[assignment]
+        # 接受任意参数，避免 self/attr 不匹配
+        torch._classes.__getattr__ = lambda *_, **__: types.SimpleNamespace()  # type: ignore[assignment]
 except Exception:
     pass
-# --------------------------------------------------------------------
+# ---------------------------------------------------------
 
-# 3) 其余常规 import（保持原顺序）
-import sys, pathlib, asyncio
+# ③ 常规 import（保持不变）
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
 
@@ -40,7 +37,8 @@ nest_asyncio.apply()
 from utils import get_chat_response, online_search_agent
 from ingest import ingest_folder
 from memory import MemoryManager
-# ----------------- import 区域结束 -----------------
+# ---------- 头部结束 --------------------------------------
+
 
 # 页面配置
 st.set_page_config(page_title="znt-GPT", page_icon="🤖", layout="wide")
