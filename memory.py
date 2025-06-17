@@ -142,6 +142,8 @@ class MemoryManager:
             openai_api_key=openai_api_key,
             openai_api_base=openai_api_base
         )
+        # 添加向量存储的引用，方便直接访问
+        self.vector_store = self.long_term.vector_store
 
     def add_interaction(self, human_message: str, ai_message: str):
         self.short_term.add_message(human_message, ai_message)
@@ -160,3 +162,13 @@ class MemoryManager:
 
     def get_long_term_summary(self) -> str:
         return self.long_term.summarize()
+
+    def add_to_vector_memory(self, prompt: str, answer: str):
+        """将问答对存入长期记忆（向量库）"""
+        from langchain.docstore.document import Document
+        if self.vector_store is None:
+            return
+
+        content = f"用户：{prompt}\n助手：{answer}"
+        doc = Document(page_content=content)
+        self.vector_store.add_documents([doc])
