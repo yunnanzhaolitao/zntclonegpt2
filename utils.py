@@ -94,22 +94,32 @@ def get_chat_response(prompt: str,
             )
         )
 
+        # 获取相关历史记录
         relevant_memory = memory_manager.get_relevant_history(prompt)
-        short_term_memory = relevant_memory["short_term"].get("chat_history", [])
+        messages = relevant_memory["short_term"].get("chat_history", [])
 
+        # 创建检索链
         chain = ConversationalRetrievalChain.from_llm(
             llm=llm,
             retriever=vectordb.as_retriever(),
-            memory=memory_manager.short_term.memory,
             return_source_documents=True,
             verbose=chain_of_thought,
             output_key="answer"
         )
 
         try:
+            # 将消息历史转换为元组列表格式
+            chat_history = []
+            for i in range(0, len(messages), 2):
+                if i + 1 < len(messages):
+                    human_msg = messages[i]
+                    ai_msg = messages[i + 1]
+                    chat_history.append((human_msg.content, ai_msg.content))
+
+            # 调用检索链
             result = chain.invoke({
                 "question": prompt,
-                "chat_history": short_term_memory
+                "chat_history": chat_history
             })
 
             # 输出调试信息
@@ -134,13 +144,29 @@ def get_chat_response(prompt: str,
 
     # 否则为普通对话模式
     try:
+        # 获取历史消息
+        messages = memory_manager.short_term.message_history.messages
+        
+        # 构建对话上下文
+        context = "\n".join([
+            f"Human: {msg.content}" if msg.type == "human" else f"Assistant: {msg.content}"
+            for msg in messages[-6:]  # 只使用最近的3轮对话
+        ])
+        
+        # 使用简单的 ConversationChain，不依赖复杂的内存管理
         conv = ConversationChain(
             llm=llm,
-            memory=memory_manager.short_term.memory,
             verbose=chain_of_thought
         )
-        result = conv.invoke({"input": prompt})
-
+        
+        # 将上下文和当前问题组合
+        if context:
+            full_prompt = f"{context}\n\nHuman: {prompt}\nAssistant:"
+        else:
+            full_prompt = prompt
+            
+        result = conv.invoke({"input": full_prompt})
+        
         print("[DEBUG] ConversationChain result:", result)
 
         if isinstance(result, dict):
@@ -151,6 +177,7 @@ def get_chat_response(prompt: str,
     except Exception as e:
         response = f"⚠️ 对话模式异常：{str(e)}"
 
+    # 添加到内存
     memory_manager.add_interaction(prompt, response)
 
     st.session_state.chat_history = st.session_state.get("chat_history", [])

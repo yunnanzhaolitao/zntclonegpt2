@@ -30,6 +30,44 @@ except Exception:
 # -----------------------------------------------------------------
 
 # ③ 其余正常 import（保持不变）
+# ---------- znt-GPT  main.py  (imports & 环境补丁) ----------
+import os, sys, types, importlib, builtins
+os.environ["STREAMLIT_WATCHER_TYPE"] = "none"      # 彻底关闭源码热重载线程
+builtins.__dict__["__torch_fake_module__"] = True  # 配合 torch 延迟加载
+
+# 0️⃣   把 "伪 torch.{_classes, classes}" 先行注入 sys.modules
+def _make_fake_torch_branch(name: str):
+    fake = types.ModuleType(name)
+    class _FakePath(list):         # 让 watcher 能取到 ._path
+        _path: list = []
+    fake.__path__ = _FakePath()    # type: ignore
+    fake.__getattr__ = lambda *a, **k: types.SimpleNamespace()   # 哑响应
+    sys.modules[name] = fake
+
+for _n in ("torch.classes", "torch._classes"):
+    if _n not in sys.modules:
+        _make_fake_torch_branch(_n)
+
+# 1️⃣   禁掉 Streamlit 对源码的路径扫描
+import streamlit.watcher.local_sources_watcher as _sw
+_sw.LocalSourcesWatcher._get_module_paths = lambda *_a, **_k: []
+
+# 2️⃣   现在再正常 import torch，并把真模块也打补丁（稳妥起见）
+try:
+    torch = importlib.import_module("torch")
+    for _n in ("classes", "_classes"):
+        br = getattr(torch, _n, None)
+        if br:
+            br.__getattr__ = lambda *a, **k: types.SimpleNamespace()  # type: ignore
+            if not getattr(br, "__path__", None):
+                class _FakePath2(list): _path = []
+                br.__path__ = _FakePath2()                            # type: ignore
+except Exception:
+    # torch 可能根本用不到；忽略即可
+    pass
+# -----------------------------------------------------------------
+
+# 3️⃣   其余常规 import
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
 
@@ -41,6 +79,7 @@ nest_asyncio.apply()
 from utils import get_chat_response, online_search_agent
 from ingest import ingest_folder
 from memory import MemoryManager
+# ----------  import 补丁结束 --------------------------------------
 # ---------- 头部结束 --------------------------------------------
 
 

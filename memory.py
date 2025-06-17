@@ -1,42 +1,59 @@
 from typing import List, Dict, Any
-from langchain.memory import ConversationSummaryBufferMemory
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chat_models import ChatOpenAI
+from langchain.memory import ChatMessageHistory
+from langchain.schema import HumanMessage, AIMessage
 import os
 import json
 from datetime import datetime
 
 class ShortTermMemory:
     def __init__(self, llm, max_token_limit=3000):
-        def fake_token_counter(_text: str) -> int:
-            return len(_text)
-
-        self.memory = ConversationSummaryBufferMemory(
-            llm=llm,
-            memory_key="chat_history",
-            return_messages=True,
-            output_key="answer",
-            max_token_limit=max_token_limit,
-            get_token_func=fake_token_counter
-        )
+        self.llm = llm
+        self.max_token_limit = max_token_limit
+        self.message_history = ChatMessageHistory()
+        self.memory_key = "chat_history"
 
     def add_message(self, human_message: str, ai_message: str):
-        self.memory.save_context(
-            {"input": human_message},
-            {"output": ai_message}
-        )
+        self.message_history.add_user_message(human_message)
+        self.message_history.add_ai_message(ai_message)
+        
+        # 简单的令牌管理 - 如果历史记录太长，删除最早的消息
+        self._trim_history_if_needed()
+
+    def _trim_history_if_needed(self):
+        # 简单的令牌计数 - 每个字符算作一个令牌
+        total_tokens = sum(len(msg.content) for msg in self.message_history.messages)
+        
+        # 如果超过最大令牌限制，删除最早的消息对
+        while total_tokens > self.max_token_limit and len(self.message_history.messages) >= 2:
+            # 删除最早的人类消息和AI消息
+            self.message_history.messages.pop(0)  # 人类消息
+            if self.message_history.messages:  # 确保还有消息
+                self.message_history.messages.pop(0)  # AI消息
+            
+            # 重新计算令牌数
+            total_tokens = sum(len(msg.content) for msg in self.message_history.messages)
 
     def get_memory_variables(self) -> Dict[str, Any]:
-        return self.memory.load_memory_variables({})
+        return {self.memory_key: self.message_history.messages}
 
-    def get_buffer(self) -> List[str]:
-        return self.memory.buffer
+    def get_buffer(self) -> List[Dict[str, str]]:
+        buffer = []
+        for i in range(0, len(self.message_history.messages), 2):
+            if i + 1 < len(self.message_history.messages):
+                human_msg = self.message_history.messages[i]
+                ai_msg = self.message_history.messages[i + 1]
+                buffer.append({
+                    "human": human_msg.content,
+                    "ai": ai_msg.content
+                })
+        return buffer
 
     def clear(self):
-        self.memory.clear()
+        self.message_history.clear()
 
 class LongTermMemory:
     def __init__(self, vector_store_path: str = "vector_dbs", openai_api_key: str = None, openai_api_base: str = None):
