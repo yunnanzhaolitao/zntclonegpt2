@@ -163,16 +163,16 @@ if "openai_api_key" not in st.session_state or "memory_manager" not in st.sessio
     st.stop()
 
 # 可选调试：查看历史摘要内容
-with st.sidebar:
-    if st.button("📄 查看历史摘要"):
-        if "memory_manager" in st.session_state:
-            short_term = st.session_state["memory_manager"].short_term.memory.buffer
-            st.sidebar.subheader("短期记忆")
-            st.sidebar.code(short_term)
-            
-            long_term = st.session_state["memory_manager"].get_long_term_summary()
-            st.sidebar.subheader("长期记忆摘要")
-            st.sidebar.code(long_term)
+#with st.sidebar:
+#    if st.button("📄 查看历史摘要"):
+#        if "memory_manager" in st.session_state:
+#            short_term = st.session_state["memory_manager"].short_term.memory.buffer
+#            st.sidebar.subheader("短期记忆")
+#            st.sidebar.code(short_term)
+#            
+#            long_term = st.session_state["memory_manager"].get_long_term_summary()
+#            st.sidebar.subheader("长期记忆摘要")
+#            st.sidebar.code(long_term)
 
 # 展示聊天记录
 for msg in st.session_state["messages"]:
