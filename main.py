@@ -221,6 +221,9 @@ if prompt:
                     api_base=st.session_state["api_base"]
                 )
                 answer = agent.invoke({"input": prompt})["output"]
+                # 确保联网搜索模式也保存对话历史
+                st.session_state["memory_manager"].add_interaction(prompt, answer)
+                st.session_state["memory_manager"].add_to_vector_memory(prompt, answer)
             else:
                 answer = get_chat_response(
                     prompt=prompt,
